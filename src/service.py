@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Dict, Optional
 
-from .domain import ensure_role, normalize_severity, require_number, require_text
+from .domain import (ConflictError, ensure_role, normalize_severity,
+                     require_number, require_text)
 from .repository import Repository
-from .rules import (AUDIT_ROLES, CREATE_ROLES, ENTITY, RECORD_ROLES, TITLE,
-                    VIEW_ROLES, completion_blockers, escalation_required,
-                    priority_score, response_deadline_hours, role_for_transition,
+from .rules import (AUDIT_ROLES, CREATE_ROLES, ENTITY, RECORD_ROLES,
+                    RENEWABLE_STATES, RENEWAL_ROLES, TITLE, VIEW_ROLES,
+                    completion_blockers, escalation_required, priority_score,
+                    response_deadline_hours, role_for_transition,
                     validate_transition)
 
 
@@ -78,6 +82,58 @@ class Service:
     def get_item(self, item_id: int, role: str) -> Dict[str, Any]:
         self._view(role)
         return self.enrich(self.repository.get_item(item_id))
+
+    def submit_renewal(self, item_id: int, payload: Dict[str, Any], actor: str,
+                       role: str) -> Dict[str, Any]:
+        """许可续期交接：一次可回滚事务完成续期、额度冻结、现场检查、整改关闭，
+        并在续期通过时停用旧额度。同一续期编号幂等，内容不同单独留冲突。"""
+        ensure_role(role, RENEWAL_ROLES)
+        actor = require_text(actor, "actor", 100)
+        renewal_no = require_text(payload.get("renewal_no"), "renewal_no", 100)
+        expected_version = payload.get("expected_version")
+        if not isinstance(expected_version, int) or expected_version < 1:
+            raise ValueError("expected_version必须是正整数")
+        inspection_detail = require_text(
+            payload.get("inspection_detail"), "inspection_detail")
+        rectification_note = payload.get("rectification_note")
+        if rectification_note is not None:
+            rectification_note = require_text(
+                rectification_note, "rectification_note")
+        item = self.repository.get_item(item_id)
+        if item["status"] not in RENEWABLE_STATES:
+            raise ConflictError(f"当前状态{item['status']}不允许续期交接")
+        new_external_ref = payload.get("new_external_ref")
+        if new_external_ref is not None:
+            new_external_ref = require_text(new_external_ref, "new_external_ref", 100)
+        new_permit = {
+            "title": require_text(payload.get("title") or item["title"], "title", 200),
+            "description": require_text(
+                payload.get("description") or item["description"], "description"),
+            "severity": normalize_severity(payload.get("severity") or item["severity"]),
+            "quantity": require_number(
+                payload.get("new_quantity", item["quantity"]), "new_quantity"),
+            "threshold": require_number(
+                payload.get("new_threshold", item["threshold"]), "new_threshold",
+                0.000001),
+            "external_ref": new_external_ref,
+        }
+        content_hash = hashlib.sha256(json.dumps({
+            "renewal_no": renewal_no, "item_id": item_id,
+            "expected_version": expected_version,
+            "inspection_detail": inspection_detail,
+            "rectification_note": rectification_note,
+            "new_permit": new_permit,
+        }, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+        result = self.repository.submit_renewal(
+            item_id, renewal_no, content_hash, expected_version, actor,
+            inspection_detail, rectification_note, new_permit)
+        result["old_item"] = self.enrich(result["old_item"])
+        result["new_item"] = self.enrich(result["new_item"])
+        return result
+
+    def list_renewals(self, item_id: int, role: str) -> Dict[str, Any]:
+        self._view(role)
+        return self.repository.list_renewals(item_id)
 
     def list_items(self, role: str, status: Optional[str] = None) -> list:
         self._view(role)

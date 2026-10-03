@@ -13,7 +13,7 @@ class ConflictError(DomainError): kind=ErrorKind.CONFLICT
 SEVERITIES=['low', 'medium', 'high', 'critical']; STATES=['draft', 'submitted', 'inspection', 'correction', 'approved']; ROLES=['applicant', 'inspector', 'compliance_manager', 'viewer']
 @dataclass(frozen=True)
 class Item:
-    id:int; title:str; description:str; severity:str; quantity:float; threshold:float; status:str; version:int; external_ref:Optional[str]; created_by:str; created_at:str; updated_at:str
+    id:int; title:str; description:str; severity:str; quantity:float; threshold:float; status:str; version:int; external_ref:Optional[str]; created_by:str; created_at:str; updated_at:str; quota_status:str='active'; renewal_of:Optional[int]=None; renewal_no:Optional[str]=None
 @dataclass(frozen=True)
 class Record:
     id:int; item_id:int; kind:str; detail:str; status:str; external_ref:Optional[str]; created_by:str; created_at:str
