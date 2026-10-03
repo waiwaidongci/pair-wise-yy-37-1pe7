@@ -89,6 +89,11 @@ def make_handler(service: Service, static_dir: str):
                     actor, role = self._identity()
                     del actor
                     self._json(200, {"records": service.list_records(item_id, role)})
+                elif path.startswith("/api/items/") and path.endswith("/renewals"):
+                    item_id = int(path.split("/")[3])
+                    actor, role = self._identity()
+                    del actor
+                    self._json(200, {"renewals": service.list_renewals(item_id, role)})
                 elif path.startswith("/api/items/"):
                     item_id = int(path.rsplit("/", 1)[-1])
                     actor, role = self._identity()
@@ -98,6 +103,10 @@ def make_handler(service: Service, static_dir: str):
                     actor, role = self._identity()
                     del actor
                     self._json(200, {"events": service.audit(role)})
+                elif path == "/api/renewals/conflicts":
+                    actor, role = self._identity()
+                    del actor
+                    self._json(200, {"conflicts": service.list_renewal_conflicts(role)})
                 else:
                     self._json(404, {"error": "not_found"})
             except Exception as exc:
@@ -119,6 +128,18 @@ def make_handler(service: Service, static_dir: str):
                     expected = body.get("expected_version")
                     self._json(200, service.transition(
                         item_id, target, expected, actor, role))
+                elif path.startswith("/api/items/") and path.endswith("/renewals"):
+                    item_id = int(path.split("/")[3])
+                    self._json(201, service.submit_renewal(item_id, body, actor, role))
+                elif path.startswith("/api/items/") and path.endswith("/upgrade"):
+                    item_id = int(path.split("/")[3])
+                    self._json(200, service.upgrade_baseline(item_id, actor, role))
+                elif path == "/api/renewals/upgrade-baselines":
+                    self._json(200, {"upgraded": service.upgrade_all_baselines(actor, role)})
+                elif path.startswith("/api/renewals/") and path.endswith("/approve"):
+                    renewal_no = path.split("/")[3]
+                    expected = body.get("expected_version")
+                    self._json(200, service.approve_renewal(renewal_no, expected, actor, role))
                 else:
                     self._json(404, {"error": "not_found"})
             except Exception as exc:

@@ -26,3 +26,8 @@ def make_entry(action: str, entity_type: str, entity_id: int, actor: str,
     }
     return dict(payload, previous_hash=previous_hash,
                 entry_hash=calculate_hash(previous_hash, payload))
+
+
+def hash_payload(payload: dict) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
